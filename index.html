@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>Database Explorer</title>
+</head>
+
+<body>
+  <h1>Database Explorer</h1>
+
+  <select id="tables"></select>
+  <button id="show">Show Table</button>
+  <div id="out"></div>
+
+  <script>
+    fetch("/api/tables").then(r => r.json()).then(d => {
+      const s = document.getElementById("tables");
+      d.forEach(t => s.add(new Option(t[0], t[0])));
+    });
+
+    document.getElementById("show").onclick = () => {
+      const name = document.getElementById("tables").value;
+      fetch("/api/tables/" + name).then(r => r.json()).then(rows => {
+        let html = "<table border=1>" + rows.map(r => "<tr>" + r.map(c => "<td>" + c + "</td>").join("") + "</tr>").join("") + "</table>";
+        document.getElementById("out").innerHTML = html;
+      });
+    };
+  </script>
+
+</body>
+
+</html>
