@@ -126,4 +126,62 @@ def call_function(request: Request):
     return cur.fetchall()
 
 
+@app.get("/api/describe/{name}")
+def describe_table(name: str):
+    cur = db.cursor()
+    cur.execute(f"DESC {name};")
+    return cur.fetchall()
+
+
+@app.get("/api/update_table")
+def update_table(request: Request):
+    params = dict(request.query_params)
+
+    table_name = params.get("table_name")
+    if not table_name:
+        return {"error": "table name missing"}
+
+    column_name = params.get("column_name")
+    if not column_name:
+        return {"error": "column name missing"}
+
+    value = params.get("value")
+    if not value:
+        return {"error": "value missing"}
+
+    p_col=params.get("primary_col")
+    p_val=params.get("primary_val")
+    if not p_col or p_val:
+        return {"error": "no value for where clause"}
+
+    query = f"UPDATE TABLE `{table_name}` SET `{column_name}`= `{value}` WHERE `{p_col}`=`{p_val}`;"
+
+    cur = db.cursor()
+    cur.execute(query)
+    db.commit()
+    return {"status": "success", "table": table_name}
+
+@app.get("/api/delete_table")
+def delete_table(request: Request):
+    params = dict(request.query_params)
+
+    table_name = params.get("table_name")
+    if not table_name:
+        return {"error": "table name missing"}
+
+    p_col=params.get("primary_col")
+    p_val=params.get("primary_val")
+    if not p_col or p_val:
+        return {"error": "no value for where clause"}
+
+    query = f"DELETE FROM `{table_name}` WHERE `{p_col}`=`{p_val}`;"
+
+    cur = db.cursor()
+    cur.execute(query)
+    db.commit()
+    return {"status": "success", "table": table_name}
+
+
+
+
 
