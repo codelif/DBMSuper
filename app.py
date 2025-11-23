@@ -89,8 +89,41 @@ def truncate_table(request: Request):
 
     return {"status": "success", "table": table_name}
 
+@app.get("/api/artifacts")
+def fetch_all_artifacts():
+    cur = db.cursor()
+    cur.execute(f"SELECT * FROM DbArtifacts;")
+    return cur.fetchall()
 
+@app.get("/api/call_procedure")
+def call_procedure(request: Request):
+    params=dict(request.query_params)
 
+    procedure_name= params.get("name")
+    if not procedure_name:
+        return {"error": "table name missing"}
+    
+    
+    query = f"call `{procedure_name}`;"
+
+    cur = db.cursor()
+    cur.execute(query)
+    return cur.fetchall()
+
+@app.get("/api/call_function")
+def call_function(request: Request):
+    params=dict(request.query_params)
+
+    function_name= params.get("name")
+    if not function_name:
+        return {"error": "table name missing"}
+    
+    
+    query = f"select `{function_name}`;"
+
+    cur = db.cursor()
+    cur.execute(query)
+    return cur.fetchall()
 
 
 
