@@ -327,6 +327,20 @@ BEGIN
      WHERE customer_username = p_customer_username;
 END//
 
+create procedure get_invoice(in user varchar(10))
+begin
+select p.name as product,o.quantity as quantity,p.price * o.quantity as price
+from products p,
+orders o
+where o.customer_username = user
+and o.product_id = p.product_id
+union all
+select 'TOTAL' as product,sum(o.quantity) as quantity, sum(p.price * o.quantity) as price
+from products p,
+orders o
+where o.customer_username = user
+and o.product_id = p.product_id;
+end//
 -- =========================================================
 -- FUNCTIONS (5)
 -- =========================================================
@@ -490,7 +504,7 @@ INSERT INTO DbArtifacts (name, type, description) VALUES
 ('sp_add_product',     'PROCEDURE', 'Adds a new product for a given seller.'),
 ('sp_place_order',     'PROCEDURE', 'Places an order and decrements product stock with validation.'),
 ('sp_clear_cart',      'PROCEDURE', 'Removes all cart items for a specific customer.'),
-
+('get_invoice','PROCEDURE','gives a table of all orders by a user and gives total amount to be paid')
 -- Functions
 ('fn_product_avg_rating',     'FUNCTION', 'Returns the average rating for a given product.'),
 ('fn_customer_total_spent',   'FUNCTION', 'Returns total amount spent by a customer across all orders.'),
