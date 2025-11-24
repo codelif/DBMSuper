@@ -1,17 +1,28 @@
-from fastapi import FastAPI, Request, params
+from fastapi import FastAPI, Request
 from starlette.responses import FileResponse
 import mysql.connector
 
 app = FastAPI()
 db = mysql.connector.connect(
-    host="localhost", user="karvy", passwd="folkofair", db="dbms"
+    host="localhost", user="harsh", passwd="harshpswd", db="dbms"
 )
 
 
 @app.get("/")
-def home():
+def index():
     return FileResponse("index.html")
 
+@app.get("/editor")
+def editor():
+    return FileResponse("editor.html")
+
+@app.get("/ddl")
+def ddl():
+    return FileResponse("ddl.html")
+
+@app.get("/artifacts")
+def artifacts():
+    return FileResponse("artifacts.html")
 
 @app.get("/api/tables")
 def tables():
@@ -89,42 +100,83 @@ def truncate_table(request: Request):
 
     return {"status": "success", "table": table_name}
 
+
 @app.get("/api/artifacts")
 def fetch_all_artifacts():
     cur = db.cursor()
-    cur.execute(f"SELECT * FROM DbArtifacts;")
+    cur.execute("select name, type, description, param_count from DbArtifacts;")
     return cur.fetchall()
 
 @app.get("/api/call_procedure")
 def call_procedure(request: Request):
-    params=dict(request.query_params)
+    params = dict(request.query_params)
 
-    procedure_name= params.get("name")
+    procedure_name = params.get("name")
     if not procedure_name:
-        return {"error": "table name missing"}
-    
-    
-    query = f"call `{procedure_name}`;"
+        return {"error": "procedure name missing"}
+
+    args = []
+    i = 1
+    while True:
+        key = f"p{i}"
+        if key not in params:
+            break
+        args.append(params[key])
+        i += 1
 
     cur = db.cursor()
-    cur.execute(query)
-    return cur.fetchall()
+    if args:
+        placeholders = ", ".join(["%s"] * len(args))
+        query = f"call `{procedure_name}`({placeholders});"
+        cur.execute(query, tuple(args))
+    else:
+        query = f"call `{procedure_name}`();"
+        cur.execute(query)
+
+    # collect the first result set to return
+    all_rows = cur.fetchall()
+
+    # drain any remaining result sets to keep connector in sync
+    while cur.nextset():
+        try:
+            cur.fetchall()
+        except mysql.connector.errors.InterfaceError:
+            break
+
+    db.commit()
+    cur.close()
+    return all_rows
+
 
 @app.get("/api/call_function")
 def call_function(request: Request):
-    params=dict(request.query_params)
+    params = dict(request.query_params)
 
-    function_name= params.get("name")
+    function_name = params.get("name")
     if not function_name:
-        return {"error": "table name missing"}
-    
-    
-    query = f"select `{function_name}`;"
+        return {"error": "function name missing"}
+
+    args = []
+    i = 1
+    while True:
+        key = f"p{i}"
+        if key not in params:
+            break
+        args.append(params[key])
+        i += 1
 
     cur = db.cursor()
-    cur.execute(query)
-    return cur.fetchall()
+    if args:
+        placeholders = ", ".join(["%s"] * len(args))
+        query = f"select `{function_name}`({placeholders});"
+        cur.execute(query, tuple(args))
+    else:
+        query = f"select `{function_name}`();"
+        cur.execute(query)
 
+    rows = cur.fetchall()
+    cur.close()
+    return rows
 
 @app.get("/api/describe/{name}")
 def describe_table(name: str):
@@ -146,18 +198,17 @@ def update_table(request: Request):
         return {"error": "column name missing"}
 
     value = params.get("value")
-    if not value:
+    if value is None:
         return {"error": "value missing"}
 
-    p_col=params.get("primary_col")
-    p_val=params.get("primary_val")
-    if not p_col or p_val:
+    p_col = params.get("primary_col")
+    p_val = params.get("primary_val")
+    if not p_col or not p_val:
         return {"error": "no value for where clause"}
 
-    query = f"UPDATE TABLE `{table_name}` SET `{column_name}`= `{value}` WHERE `{p_col}`=`{p_val}`;"
-
+    query = f"UPDATE `{table_name}` SET `{column_name}` = %s WHERE `{p_col}` = %s;"
     cur = db.cursor()
-    cur.execute(query)
+    cur.execute(query, (value, p_val))
     db.commit()
     return {"status": "success", "table": table_name}
 
@@ -169,19 +220,13 @@ def delete_table(request: Request):
     if not table_name:
         return {"error": "table name missing"}
 
-    p_col=params.get("primary_col")
-    p_val=params.get("primary_val")
-    if not p_col or p_val:
+    p_col = params.get("primary_col")
+    p_val = params.get("primary_val")
+    if not p_col or not p_val:
         return {"error": "no value for where clause"}
 
-    query = f"DELETE FROM `{table_name}` WHERE `{p_col}`=`{p_val}`;"
-
+    query = f"DELETE FROM `{table_name}` WHERE `{p_col}` = %s;"
     cur = db.cursor()
-    cur.execute(query)
+    cur.execute(query, (p_val,))
     db.commit()
     return {"status": "success", "table": table_name}
-
-
-
-
-

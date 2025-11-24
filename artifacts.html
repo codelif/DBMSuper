@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>Routine Explorer</title>
+</head>
+
+<body>
+  <h1>Routine Explorer</h1>
+
+  <h2>procedures</h2>
+  <select id="procs"></select>
+  <div id="proc_params"></div>
+  <button id="call_proc">call procedure</button>
+
+  <h2>functions</h2>
+  <select id="funcs"></select>
+  <div id="func_params"></div>
+  <button id="call_func">call function</button>
+
+  <div id="out"></div>
+
+  <script>
+    const meta = {};
+
+    function renderParams(kind) {
+      const sel = document.getElementById(kind === "proc" ? "procs" : "funcs");
+      const name = sel.value;
+      const m = meta[name];
+      const div = document.getElementById(kind === "proc" ? "proc_params" : "func_params");
+      div.innerHTML = "";
+      if (!m) return;
+      for (let i = 1; i <= m.param_count; i++) {
+        const row = document.createElement("div");
+        row.innerHTML = "p" + i + ': <input id="' + kind + "_p" + i + '">';
+        div.appendChild(row);
+      }
+    }
+
+    function loadArtifacts() {
+      fetch("/api/artifacts").then(r => r.json()).then(d => {
+        const procs = document.getElementById("procs");
+        const funcs = document.getElementById("funcs");
+        procs.innerHTML = "";
+        funcs.innerHTML = "";
+        d.forEach(a => {
+          const name = a[0], type = a[1], desc = a[2], count = a[3];
+          meta[name] = {type: type, description: desc, param_count: count};
+          if (type === "PROCEDURE") {
+            procs.add(new Option(name + " - " + desc, name));
+          } else if (type === "FUNCTION") {
+            funcs.add(new Option(name + " - " + desc, name));
+          }
+        });
+        if (procs.value) renderParams("proc");
+        if (funcs.value) renderParams("func");
+      });
+    }
+
+    function renderTable(rows) {
+      if (!rows || !rows.length) {
+        document.getElementById("out").innerHTML = "<p>no results</p>";
+        return;
+      }
+      let html = "<table border=1>";
+      html += rows.map(r => "<tr>" + r.map(c => "<td>" + c + "</td>").join("") + "</tr>").join("");
+      html += "</table>";
+      document.getElementById("out").innerHTML = html;
+    }
+
+    document.getElementById("procs").onchange = () => renderParams("proc");
+    document.getElementById("funcs").onchange = () => renderParams("func");
+
+    document.getElementById("call_proc").onclick = () => {
+      const name = document.getElementById("procs").value;
+      if (!name) return;
+      const m = meta[name];
+      let qs = "?name=" + encodeURIComponent(name);
+      for (let i = 1; i <= (m ? m.param_count : 0); i++) {
+        const v = document.getElementById("proc_p" + i).value;
+        qs += "&p" + i + "=" + encodeURIComponent(v);
+      }
+      fetch("/api/call_procedure" + qs)
+        .then(r => r.json())
+        .then(renderTable);
+    };
+
+    document.getElementById("call_func").onclick = () => {
+      const name = document.getElementById("funcs").value;
+      if (!name) return;
+      const m = meta[name];
+      let qs = "?name=" + encodeURIComponent(name);
+      for (let i = 1; i <= (m ? m.param_count : 0); i++) {
+        const v = document.getElementById("func_p" + i).value;
+        qs += "&p" + i + "=" + encodeURIComponent(v);
+      }
+      fetch("/api/call_function" + qs)
+        .then(r => r.json())
+        .then(renderTable);
+    };
+
+    loadArtifacts();
+  </script>
+
+  <hr>
+  <div style="text-align:center">
+    <a href="/">home</a> |
+    <a href="/editor">editor</a> | 
+    <a href="/ddl">ddl</a> |
+    <a href="/artifacts">artifacts</a>
+  </div>
+</body>
+
+</html>

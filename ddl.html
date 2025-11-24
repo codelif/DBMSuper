@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>DDL Explorer</title>
+</head>
+
+<body>
+  <h1>DDL Explorer</h1>
+
+  <h2>Create table</h2>
+  <input id="create_name" placeholder="table name">
+  <button id="add_col">+ column</button>
+  <div id="cols"></div>
+  <button id="create_btn">Create</button>
+
+  <h2>Drop table</h2>
+  <select id="drop_sel"></select>
+  <button id="drop_btn">Drop</button>
+
+  <h2>Truncate table</h2>
+  <select id="truncate_sel"></select>
+  <button id="truncate_btn">Truncate</button>
+
+  <pre id="out"></pre>
+
+  <script>
+    function loadTables() {
+      fetch("/api/tables").then(r => r.json()).then(d => {
+        const ds = [document.getElementById("drop_sel"), document.getElementById("truncate_sel")];
+        ds.forEach(s => {s.innerHTML = ""; d.forEach(t => s.add(new Option(t[0], t[0])));});
+      });
+    }
+    loadTables();
+
+    let col_i = 0;
+    document.getElementById("add_col").onclick = () => {
+      col_i++;
+      const div = document.createElement("div");
+      div.innerHTML = 'col' + col_i + ': <input data-col="' + col_i + '"> <select data-type="' + col_i + '"><option>int</option><option>varchar(255)</option><option>text</option><option>datetime</option></select>';
+      document.getElementById("cols").appendChild(div);
+    };
+
+    document.getElementById("create_btn").onclick = () => {
+      const name = document.getElementById("create_name").value;
+      if (!name) {alert("table name required"); return;}
+      let qs = '?name=' + encodeURIComponent(name);
+      const cols = document.querySelectorAll("[data-col]");
+      cols.forEach((inp, idx) => {
+        const i = idx + 1;
+        const typ = document.querySelector('[data-type="' + inp.getAttribute("data-col") + '"]').value;
+        if (inp.value && typ) {
+          qs += '&col' + i + '=' + encodeURIComponent(inp.value) + '&type' + i + '=' + encodeURIComponent(typ);
+        }
+      });
+      fetch("/api/create_table" + qs).then(r => r.json()).then(j => {
+        document.getElementById("out").textContent = JSON.stringify(j, null, 2);
+        loadTables();
+      });
+    };
+
+    document.getElementById("drop_btn").onclick = () => {
+      const name = document.getElementById("drop_sel").value;
+      if (!name) return;
+      fetch("/api/drop?name=" + encodeURIComponent(name)).then(r => r.json()).then(j => {
+        document.getElementById("out").textContent = JSON.stringify(j, null, 2);
+        loadTables();
+      });
+    };
+
+    document.getElementById("truncate_btn").onclick = () => {
+      const name = document.getElementById("truncate_sel").value;
+      if (!name) return;
+      fetch("/api/truncate?name=" + encodeURIComponent(name)).then(r => r.json()).then(j => {
+        document.getElementById("out").textContent = JSON.stringify(j, null, 2);
+      });
+    };
+  </script>
+
+  <hr>
+  <div style="text-align:center">
+    <a href="/">home</a> |
+    <a href="/editor">editor</a> | 
+    <a href="/ddl">ddl</a> |
+    <a href="/artifacts">artifacts</a>
+  </div>
+</body>
+
+</html>

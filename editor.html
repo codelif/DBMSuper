@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>Table Editor</title>
+</head>
+
+<body>
+  <h1>Table Editor</h1>
+
+  <select id="tables"></select>
+  <button id="load">Load</button>
+
+  <div id="out"></div>
+
+  <script>
+    let currentTable = null;
+    let pkColName = null;
+    let pkIndex = 0;
+    let colNames = [];
+
+    function loadTables() {
+      fetch("/api/tables").then(r => r.json()).then(d => {
+        const s = document.getElementById("tables");
+        s.innerHTML = "";
+        d.forEach(t => s.add(new Option(t[0], t[0])));
+      });
+    }
+
+    function loadTable(name) {
+      if (!name) return;
+      currentTable = name;
+      fetch("/api/describe/" + name).then(r => r.json()).then(desc => {
+        colNames = desc.map(x => x[0]);
+        pkIndex = desc.findIndex(x => x[3] === "PRI");
+        if (pkIndex < 0) pkIndex = 0;
+        pkColName = colNames[pkIndex];
+        return fetch("/api/tables/" + name).then(r => r.json());
+      }).then(rows => {
+        renderTable(rows);
+      });
+    }
+
+    function renderTable(rows) {
+      if (!rows || !rows.length) {
+        document.getElementById("out").innerHTML = "<p>no rows</p>";
+        return;
+      }
+      let html = "<table id='data' border=1><tr>";
+      colNames.forEach(c => html += "<th>" + c + "</th>");
+      html += "<th>delete</th></tr>";
+      rows.forEach(r => {
+        const pkVal = r[pkIndex];
+        html += "<tr>";
+        colNames.forEach((c, i) => {
+          html += "<td data-col='" + c + "' data-pkcol='" + pkColName +
+            "' data-pkval='" + pkVal + "'>" + r[i] + "</td>";
+        });
+        html += "<td><button class='del_row' data-pkval='" + pkVal + "'>x</button></td></tr>";
+      });
+      html += "</table>";
+      document.getElementById("out").innerHTML = html;
+      attachTableEvents();
+    }
+
+    function attachTableEvents() {
+      const table = document.getElementById("data");
+      if (!table) return;
+
+      table.onclick = function (e) {
+        if (e.target.className === "del_row") {
+          const pkVal = e.target.getAttribute("data-pkval");
+          const qs = "?table_name=" + encodeURIComponent(currentTable) +
+            "&primary_col=" + encodeURIComponent(pkColName) +
+            "&primary_val=" + encodeURIComponent(pkVal);
+          fetch("/api/delete_table" + qs).then(r => r.json()).then(j => {
+            if (j.error) {alert(j.error); return;}
+            e.target.closest("tr").remove();
+          });
+          return;
+        }
+        const td = e.target.closest("td");
+        if (!td || td.parentNode.rowIndex === 0) return;
+        Array.from(table.getElementsByTagName("td")).forEach(c => c.style.backgroundColor = "");
+        td.style.backgroundColor = "#eef";
+      };
+
+      table.ondblclick = function (e) {
+        const td = e.target.closest("td");
+        if (!td || td.parentNode.rowIndex === 0) return;
+        if (td.querySelector("input")) return;
+        if (!td.getAttribute("data-col")) return; // skip delete column
+        const oldVal = td.textContent;
+        const input = document.createElement("input");
+        input.value = oldVal;
+        td.textContent = "";
+        td.appendChild(input);
+        input.focus();
+        input.onkeydown = function (ev) {
+          if (ev.key === "Enter") {
+            const newVal = input.value;
+            const col = td.getAttribute("data-col");
+            const pkcol = td.getAttribute("data-pkcol");
+            const pkval = td.getAttribute("data-pkval");
+            let qs = "?table_name=" + encodeURIComponent(currentTable) +
+              "&column_name=" + encodeURIComponent(col) +
+              "&value=" + encodeURIComponent(newVal) +
+              "&primary_col=" + encodeURIComponent(pkcol) +
+              "&primary_val=" + encodeURIComponent(pkval);
+            fetch("/api/update_table" + qs).then(r => r.json()).then(j => {
+              if (j.error) {
+                alert(j.error);
+                td.removeChild(input);
+                td.textContent = oldVal;
+              } else {
+                td.removeChild(input);
+                td.textContent = newVal;
+              }
+            }).catch(() => {
+              td.removeChild(input);
+              td.textContent = oldVal;
+            });
+          } else if (ev.key === "Escape") {
+            td.removeChild(input);
+            td.textContent = oldVal;
+          }
+        };
+      };
+    }
+
+    document.getElementById("load").onclick = () => {
+      const name = document.getElementById("tables").value;
+      loadTable(name);
+    };
+
+    loadTables();
+  </script>
+  <hr>
+  <div style="text-align:center">
+    <a href="/">home</a> |
+    <a href="/editor">editor</a> |
+    <a href="/ddl">ddl</a> |
+    <a href="/artifacts">artifacts</a>
+  </div>
+</body>
+
+</html>
