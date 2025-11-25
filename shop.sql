@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS Products (
   product_id       INT UNSIGNED NOT NULL AUTO_INCREMENT,
   seller_username  VARCHAR(64)  NOT NULL,
   name             VARCHAR(255) NOT NULL,
-  rating           TINYINT,
+  rating           int,
   price            INT UNSIGNED NOT NULL,
   quantity         INT UNSIGNED NOT NULL,
   description      TEXT,
@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS Products (
 CREATE TABLE IF NOT EXISTS Reviews (
   product_id         INT UNSIGNED NOT NULL,
   customer_username  VARCHAR(64)  NOT NULL,
-  rating             TINYINT      NOT NULL,
+  rating             int      NOT NULL,
   review             TEXT,
   created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -109,87 +109,102 @@ CREATE TABLE IF NOT EXISTS Orders (
   CHECK (quantity >= 0)
 );
 
--- =========================================================
--- STORED PROCEDURES (5)
--- =========================================================
-DELIMITER //
 
-CREATE PROCEDURE sp_create_customer(
-    IN p_username      VARCHAR(64),
-    IN p_password_hash VARCHAR(255),
-    IN p_full_name     VARCHAR(255),
-    IN p_email         VARCHAR(255),
-    IN p_phone         VARCHAR(32),
-    IN p_address       TEXT
+delimiter &&
+
+drop procedure if exists create_customer&&
+create procedure create_customer(
+  in p_username varchar(64),
+  in p_password_hash varchar(255),
+  in p_full_name varchar(255),
+  in p_email varchar(255),
+  in p_phone varchar(32),
+  in p_address text
 )
-BEGIN
-    INSERT INTO Customers (username, password_hash, full_name, email, phone, address)
-    VALUES (p_username, p_password_hash, p_full_name, p_email, p_phone, p_address);
-END//
-    
-CREATE PROCEDURE sp_create_seller(
-    IN p_username      VARCHAR(64),
-    IN p_password_hash VARCHAR(255),
-    IN p_display_name  VARCHAR(255),
-    IN p_email         VARCHAR(255),
-    IN p_phone         VARCHAR(32),
-    IN p_address       TEXT
+begin
+  insert into Customers(username, password_hash, full_name, email, phone, address)
+  values (p_username, p_password_hash, p_full_name, p_email, p_phone, p_address);
+end&&
+
+drop procedure if exists create_seller&&
+create procedure create_seller(
+  in p_username varchar(64),
+  in p_password_hash varchar(255),
+  in p_display_name varchar(255),
+  in p_email varchar(255),
+  in p_phone varchar(32),
+  in p_address text
 )
-BEGIN
-    INSERT INTO Sellers (username, password_hash, display_name, email, phone, address)
-    VALUES (p_username, p_password_hash, p_display_name, p_email, p_phone, p_address);
-END//
+begin
+  insert into Sellers(username, password_hash, display_name, email, phone, address)
+  values (p_username, p_password_hash, p_display_name, p_email, p_phone, p_address);
+end&&
 
-CREATE PROCEDURE sp_add_product(
-    IN p_seller_username VARCHAR(64),
-    IN p_name            VARCHAR(255),
-    IN p_price           INT UNSIGNED,
-    IN p_quantity        INT UNSIGNED,
-    IN p_description     TEXT
+drop procedure if exists add_product&&
+create procedure add_product(
+  in p_seller_username varchar(64),
+  in p_name varchar(255),
+  in p_price int unsigned,
+  in p_quantity int unsigned,
+  in p_description text
 )
-BEGIN
-    INSERT INTO Products (seller_username, name, rating, price, quantity, description)
-    VALUES (p_seller_username, p_name, NULL, p_price, p_quantity, p_description);
-END//
+begin
+  insert into Products(seller_username, name, rating, price, quantity, description)
+  values (p_seller_username, p_name, null, p_price, p_quantity, p_description);
+end&&
 
-CREATE PROCEDURE sp_place_order(
-    IN p_customer_username VARCHAR(64),
-    IN p_product_id        INT UNSIGNED,
-    IN p_quantity          INT UNSIGNED
+drop procedure if exists place_order&&
+create procedure place_order(
+  in p_customer_username varchar(64),
+  in p_product_id int unsigned,
+  in p_quantity int unsigned
 )
-BEGIN
-    DECLARE v_stock INT;
+begin
+  declare v_stock int;
 
-    SELECT quantity
-      INTO v_stock
-      FROM Products
-     WHERE product_id = p_product_id
-     FOR UPDATE;
+  select quantity into v_stock
+  from Products
+  where product_id = p_product_id
+  for update;
 
-    IF v_stock IS NULL THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'Product not found';
-    ELSEIF v_stock < p_quantity THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'Insufficient stock';
-    ELSE
-        INSERT INTO Orders (product_id, customer_username, quantity)
-        VALUES (p_product_id, p_customer_username, p_quantity);
+  if v_stock is null then
+    signal sqlstate '45000' set message_text = 'Product not found';
+  elseif v_stock < p_quantity then
+    signal sqlstate '45000' set message_text = 'Insufficient stock';
+  else
+    insert into Orders(product_id, customer_username, quantity)
+    values (p_product_id, p_customer_username, p_quantity);
 
-        UPDATE Products
-           SET quantity = quantity - p_quantity
-         WHERE product_id = p_product_id;
-    END IF;
-END//
+    update Products
+    set quantity = quantity - p_quantity
+    where product_id = p_product_id;
+  end if;
+end&&
 
-CREATE PROCEDURE sp_clear_cart(
-    IN p_customer_username VARCHAR(64)
+drop procedure if exists clear_cart&&
+create procedure clear_cart(
+  in p_customer_username varchar(64)
 )
-BEGIN
-    DELETE FROM CartItems
-     WHERE customer_username = p_customer_username;
-END//
+begin
+  delete from CartItems
+  where customer_username = p_customer_username;
+end&&
 
+drop function if exists product_avg_rating&&
+create function product_avg_rating(
+  p_product_id int unsigned
+)
+returns decimal(3,2)
+reads sql data
+begin
+  declare v_avg decimal(3,2);
+  select ifnull(avg(rating),0) into v_avg
+  from Reviews
+  where product_id = p_product_id;
+  return v_avg;
+end&&
+
+drop procedure if exists get_invoice&&
 create procedure get_invoice(in p_user varchar(10))
 begin
 select p.name as product,o.quantity as quantity,p.price * o.quantity as price
@@ -203,151 +218,136 @@ from Products p,
 Orders o
 where o.customer_username = p_user
 and o.product_id = p.product_id;
-end//
--- =========================================================
--- FUNCTIONS (5)
--- =========================================================
+end&&
 
-CREATE FUNCTION fn_product_avg_rating(p_product_id INT UNSIGNED)
-RETURNS DECIMAL(3,2)
-READS SQL DATA
-BEGIN
-    DECLARE v_avg DECIMAL(3,2);
-    SELECT IFNULL(AVG(rating), 0) INTO v_avg
-      FROM Reviews
-     WHERE product_id = p_product_id;
-    RETURN v_avg;
-END//
+drop function if exists customer_total_spent&&
+create function customer_total_spent(
+  p_customer_username varchar(64)
+)
+returns int
+reads sql data
+begin
+  declare v_total int;
+  select ifnull(sum(o.quantity * p.price),0) into v_total
+  from Orders o
+  join Products p on p.product_id = o.product_id
+  where o.customer_username = p_customer_username;
+  return v_total;
+end&&
 
-CREATE FUNCTION fn_customer_total_spent(p_customer_username VARCHAR(64))
-RETURNS BIGINT UNSIGNED
-READS SQL DATA
-BEGIN
-    -- returns total in same units as Products.price (e.g. cents)
-    DECLARE v_total BIGINT UNSIGNED;
-    SELECT IFNULL(SUM(o.quantity * p.price), 0) INTO v_total
-      FROM Orders o
-      JOIN Products p ON p.product_id = o.product_id
-     WHERE o.customer_username = p_customer_username;
-    RETURN v_total;
-END//
+drop function if exists customer_order_count&&
+create function customer_order_count(
+  p_customer_username varchar(64)
+)
+returns int
+reads sql data
+begin
+  declare v_cnt int;
+  select count(*) into v_cnt
+  from Orders
+  where customer_username = p_customer_username;
+  return v_cnt;
+end&&
 
-CREATE FUNCTION fn_customer_order_count(p_customer_username VARCHAR(64))
-RETURNS INT
-READS SQL DATA
-BEGIN
-    DECLARE v_cnt INT;
-    SELECT COUNT(*) INTO v_cnt
-      FROM Orders
-     WHERE customer_username = p_customer_username;
-    RETURN v_cnt;
-END//
+drop function if exists product_stock&&
+create function product_stock(
+  p_product_id int unsigned
+)
+returns int
+reads sql data
+begin
+  declare v_stock int;
+  select quantity into v_stock
+  from Products
+  where product_id = p_product_id;
+  return ifnull(v_stock,0);
+end&&
 
-CREATE FUNCTION fn_product_stock(p_product_id INT UNSIGNED)
-RETURNS INT
-READS SQL DATA
-BEGIN
-    DECLARE v_stock INT;
-    SELECT quantity INTO v_stock
-      FROM Products
-     WHERE product_id = p_product_id;
-    RETURN IFNULL(v_stock, 0);
-END//
+drop function if exists seller_total_revenue&&
+create function seller_total_revenue(
+  p_seller_username varchar(64)
+)
+returns int
+reads sql data
+begin
+  declare v_total int;
+  select ifnull(sum(o.quantity * p.price),0) into v_total
+  from Orders o
+  join Products p on p.product_id = o.product_id
+  join Sellers s on s.username = p.seller_username
+  where s.username = p_seller_username;
+  return v_total;
+end&&
 
-CREATE FUNCTION fn_seller_total_revenue(p_seller_username VARCHAR(64))
-RETURNS BIGINT UNSIGNED
-READS SQL DATA
-BEGIN
-    DECLARE v_total BIGINT UNSIGNED;
-    SELECT IFNULL(SUM(o.quantity * p.price), 0) INTO v_total
-      FROM Orders o
-      JOIN Products p   ON p.product_id = o.product_id
-      JOIN Sellers  s   ON s.username   = p.seller_username
-     WHERE s.username = p_seller_username;
-    RETURN v_total;
-END//
+drop trigger if exists reviews_before_insert_rating&&
+create trigger reviews_before_insert_rating
+before insert on Reviews
+for each row
+begin
+  if new.rating < 1 or new.rating > 5 then
+    signal sqlstate '45000' set message_text = 'Rating must be between 1 and 5';
+  end if;
+end&&
 
--- =========================================================
--- AUXILIARY TABLE FOR PRICE HISTORY (for one of the triggers)
--- =========================================================
+drop trigger if exists cartitems_before_insert_quantity&&
+create trigger cartitems_before_insert_quantity
+before insert on CartItems
+for each row
+begin
+  if new.quantity <= 0 then
+    signal sqlstate '45000' set message_text = 'Cart item quantity must be greater than 0';
+  end if;
+end&&
 
-CREATE TABLE IF NOT EXISTS ProductPriceHistory (
-    id          INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    product_id  INT UNSIGNED NOT NULL,
-    old_price   INT UNSIGNED NOT NULL,
-    new_price   INT UNSIGNED NOT NULL,
-    changed_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    FOREIGN KEY (product_id) REFERENCES Products(product_id) ON DELETE CASCADE
+drop trigger if exists orders_before_insert_stock&&
+create trigger orders_before_insert_stock
+before insert on Orders
+for each row
+begin
+  declare v_stock int;
+  select quantity into v_stock
+  from Products
+  where product_id = new.product_id;
+
+  if v_stock is null then
+    signal sqlstate '45000' set message_text = 'Product not found for order';
+  elseif v_stock < new.quantity then
+    signal sqlstate '45000' set message_text = 'Insufficient stock for order';
+  end if;
+end&&
+
+drop trigger if exists orders_after_insert_decrement_stock&&
+create trigger orders_after_insert_decrement_stock
+after insert on Orders
+for each row
+begin
+  update Products
+  set quantity = quantity - new.quantity
+  where product_id = new.product_id;
+end&&
+
+drop trigger if exists products_after_update_price&&
+create trigger products_after_update_price
+after update on Products
+for each row
+begin
+  if new.price <> old.price then
+    insert into ProductPriceHistory(product_id, old_price, new_price)
+    values (new.product_id, old.price, new.price);
+  end if;
+end&&
+
+delimiter ;
+
+create table if not exists ProductPriceHistory (
+  id int unsigned not null auto_increment,
+  product_id int unsigned not null,
+  old_price int unsigned not null,
+  new_price int unsigned not null,
+  changed_at datetime not null default current_timestamp,
+  primary key (id),
+  foreign key (product_id) references Products(product_id) on delete cascade
 );
-
--- =========================================================
--- TRIGGERS (5)
--- =========================================================
-
--- Enforce rating bounds (1–5) on Reviews insert
-CREATE TRIGGER trg_reviews_before_insert_rating
-BEFORE INSERT ON Reviews
-FOR EACH ROW
-BEGIN
-    IF NEW.rating < 1 OR NEW.rating > 5 THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'Rating must be between 1 and 5';
-    END IF;
-END//
-
--- Enforce quantity > 0 on CartItems insert
-CREATE TRIGGER trg_cartitems_before_insert_quantity
-BEFORE INSERT ON CartItems
-FOR EACH ROW
-BEGIN
-    IF NEW.quantity <= 0 THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'Cart item quantity must be greater than 0';
-    END IF;
-END//
-
--- Check stock before inserting an Order
-CREATE TRIGGER trg_orders_before_insert_stock
-BEFORE INSERT ON Orders
-FOR EACH ROW
-BEGIN
-    DECLARE v_stock INT;
-    SELECT quantity INTO v_stock
-      FROM Products
-     WHERE product_id = NEW.product_id;
-
-    IF v_stock IS NULL THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'Product not found for order';
-    ELSEIF v_stock < NEW.quantity THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'Insufficient stock for order';
-    END IF;
-END//
-
--- Decrement stock after inserting an Order
-CREATE TRIGGER trg_orders_after_insert_decrement_stock
-AFTER INSERT ON Orders
-FOR EACH ROW
-BEGIN
-    UPDATE Products
-       SET quantity = quantity - NEW.quantity
-     WHERE product_id = NEW.product_id;
-END//
-
--- Log price changes on Products
-CREATE TRIGGER trg_products_after_update_price
-AFTER UPDATE ON Products
-FOR EACH ROW
-BEGIN
-    IF NEW.price <> OLD.price THEN
-        INSERT INTO ProductPriceHistory (product_id, old_price, new_price)
-        VALUES (NEW.product_id, OLD.price, NEW.price);
-    END IF;
-END//
-
-DELIMITER ;
 
 -- =========================================================
 -- DOCUMENTATION TABLE FOR PROCEDURES / FUNCTIONS / TRIGGERS
@@ -365,26 +365,26 @@ create table if not exists DbArtifacts (
 
 insert into DbArtifacts (name, type, description, param_count) values
 -- procedures
-('sp_create_customer', 'PROCEDURE', 'creates a new customer row in the customers table', 6),
-('sp_create_seller',   'PROCEDURE', 'creates a new seller row in the sellers table',    6),
-('sp_add_product',     'PROCEDURE', 'adds a new product for a given seller',            5),
-('sp_place_order',     'PROCEDURE', 'places an order and decrements product stock',     3),
-('sp_clear_cart',      'PROCEDURE', 'removes all cart items for a specific customer',   1),
-('get_invoice',        'PROCEDURE', 'returns all orders for a user with total amount',  1),
+('create_customer', 'PROCEDURE', 'creates a new customer row in the customers table', 6),
+('create_seller',   'PROCEDURE', 'creates a new seller row in the sellers table',    6),
+('add_product',     'PROCEDURE', 'adds a new product for a given seller',            5),
+('place_order',     'PROCEDURE', 'places an order and decrements product stock',     3),
+('clear_cart',      'PROCEDURE', 'removes all cart items for a specific customer',   1),
+('get_invoice',     'PROCEDURE', 'returns all orders for a user with total amount',  1),
 
 -- functions
-('fn_product_avg_rating',   'FUNCTION', 'returns the average rating for a product',     1),
-('fn_customer_total_spent', 'FUNCTION', 'returns total amount spent by a customer',     1),
-('fn_customer_order_count', 'FUNCTION', 'returns the number of orders for a customer',  1),
-('fn_product_stock',        'FUNCTION', 'returns current stock quantity for a product', 1),
-('fn_seller_total_revenue', 'FUNCTION', 'returns total revenue for a seller',           1),
+('product_avg_rating',   'FUNCTION', 'returns the average rating for a product',     1),
+('customer_total_spent', 'FUNCTION', 'returns total amount spent by a customer',     1),
+('customer_order_count', 'FUNCTION', 'returns the number of orders for a customer',  1),
+('product_stock',        'FUNCTION', 'returns current stock quantity for a product', 1),
+('seller_total_revenue', 'FUNCTION', 'returns total revenue for a seller',           1),
 
 -- triggers (always 0 params)
-('trg_reviews_before_insert_rating',        'TRIGGER', 'validates review ratings range on insert',    0),
-('trg_cartitems_before_insert_quantity',    'TRIGGER', 'ensures cart quantity is greater than zero', 0),
-('trg_orders_before_insert_stock',          'TRIGGER', 'checks stock before inserting an order',     0),
-('trg_orders_after_insert_decrement_stock', 'TRIGGER', 'decrements product stock after an order',    0),
-('trg_products_after_update_price',         'TRIGGER', 'logs product price changes',                 0);
+('reviews_before_insert_rating',        'TRIGGER', 'validates review ratings range on insert',    0),
+('cartitems_before_insert_quantity',    'TRIGGER', 'ensures cart quantity is greater than zero', 0),
+('orders_before_insert_stock',          'TRIGGER', 'checks stock before inserting an order',     0),
+('orders_after_insert_decrement_stock', 'TRIGGER', 'decrements product stock after an order',    0),
+('products_after_update_price',         'TRIGGER', 'logs product price changes',                 0);
 
 
 delimiter &&
@@ -507,10 +507,9 @@ drop function if exists agg_total_orders_amount&&
 create function agg_total_orders_amount(
   p_customer_username varchar(64)
 )
-returns bigint unsigned
-reads sql data
+returns int
 begin
-  declare v_total bigint unsigned;
+  declare v_total int;
   select ifnull(sum(o.quantity * p.price),0) into v_total
   from Orders o
   join Products p on p.product_id = o.product_id
@@ -523,7 +522,6 @@ create function agg_order_count(
   p_customer_username varchar(64)
 )
 returns int
-reads sql data
 begin
   declare v_cnt int;
   select count(*) into v_cnt
@@ -537,7 +535,6 @@ create function agg_order_avg_value(
   p_customer_username varchar(64)
 )
 returns decimal(10,2)
-reads sql data
 begin
   declare v_avg decimal(10,2);
   select ifnull(avg(o.quantity * p.price),0) into v_avg
@@ -551,10 +548,9 @@ drop function if exists agg_order_min_value&&
 create function agg_order_min_value(
   p_customer_username varchar(64)
 )
-returns bigint unsigned
-reads sql data
+returns int
 begin
-  declare v_min bigint unsigned;
+  declare v_min int;
   select ifnull(min(o.quantity * p.price),0) into v_min
   from Orders o
   join Products p on p.product_id = o.product_id
@@ -566,10 +562,9 @@ drop function if exists agg_order_max_value&&
 create function agg_order_max_value(
   p_customer_username varchar(64)
 )
-returns bigint unsigned
-reads sql data
+returns int
 begin
-  declare v_max bigint unsigned;
+  declare v_max int;
   select ifnull(max(o.quantity * p.price),0) into v_max
   from Orders o
   join Products p on p.product_id = o.product_id
@@ -582,8 +577,7 @@ create function ra_has_bought_all_from_seller(
   p_customer_username varchar(64),
   p_seller_username varchar(64)
 )
-returns tinyint(1)
-reads sql data
+returns int
 begin
   declare v_missing int;
   select count(*) into v_missing
